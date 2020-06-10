@@ -19,7 +19,7 @@ CLIENT_ID = "s1"
 pnconfig = PNConfiguration()
 pnconfig.subscribe_key = "sub-c-cf845704-8def-11ea-8e98-72774568d584"
 pnconfig.publish_key = "pub-c-8f52ff44-41bb-422c-a0c0-a63167077c6d"
-pnconfig.filter_expression = "uuid == 'client-s1'" # place the uuid to be ignored
+pnconfig.filter_expression = "uuid == 'client-s1'" # only subscribe to messages containing this meta
 pnconfig.uuid = "client-"+CLIENT_ID
 pnconfig.ssl = False
 pubnub = PubNub(pnconfig)
