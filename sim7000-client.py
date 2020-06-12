@@ -15,6 +15,9 @@ from pubnub.pubnub import PubNub
 from pubnub.callbacks import SubscribeCallback
 from pubnub.enums import PNOperationType, PNStatusCategory
 
+import I2C_LCD_driver
+
+
 CLIENT_ID = "s1"
 pnconfig = PNConfiguration()
 pnconfig.subscribe_key = "sub-c-cf845704-8def-11ea-8e98-72774568d584"
@@ -25,6 +28,7 @@ pnconfig.ssl = False
 pubnub = PubNub(pnconfig)
 CHANNEL_ID = "robotronix"
 
+SERIAL_PORT = 'ttyUSB2'
 BAUDRATE = 115200
 SECONDS_BETWEEN_READS = 1
 STREAM_DELAY = 5
@@ -183,7 +187,9 @@ def closePPPD():
 # Check for a GPS fix
 def checkForFix():
     # Start the serial connection SIM7000E
-    ser=serial.Serial('/dev/ttyS0', BAUDRATE, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=1)
+    # ser=serial.Serial('/dev/ttyUSB2', BAUDRATE, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=1)
+    ser=serial.Serial('/dev/'+SERIAL_PORT, BAUDRATE, timeout=5, rtscts=True, dsrdtr=True)
+
     # Turn on the GPS
     ser.write(b"AT+CGNSPWR=1\r")
     ser.write(b"AT+CGNSPWR?\r")
@@ -209,7 +215,8 @@ def checkForFix():
 # Read the GPS data for Latitude and Longitude
 def getCoord():
     # Start the serial connection SIM7000E
-    ser=serial.Serial('/dev/ttyS0', BAUDRATE, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=1)
+    # ser=serial.Serial('/dev/ttyUSB2', BAUDRATE, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=1)
+    ser=serial.Serial('/dev/'+SERIAL_PORT, BAUDRATE, timeout=5, rtscts=True, dsrdtr=True)
 
     ser.write(b"AT+CGNSINF\r")
     while True:
@@ -226,7 +233,9 @@ def getCoord():
 # Read the GNSS Navigation Information by parsing the complete NMEA sentence
 def getNavigationInfo():
     # Start the serial connection SIM7000E
-    ser=serial.Serial('/dev/ttyS0', BAUDRATE, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=1)
+    # ser=serial.Serial('/dev/ttyUSB2', BAUDRATE, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=1)
+    ser=serial.Serial('/dev/'+SERIAL_PORT, BAUDRATE, timeout=5, rtscts=True, dsrdtr=True)
+
     ser.write(b"AT+CGNSINF\r")
     datetime_objc = datetime.now()
     print(datetime_objc)
@@ -258,52 +267,23 @@ def getNavigationInfo():
             hpa0 = array[19] # Horizontal Position Accuracy
             vpa0 = array[20] # Vertical Position Accuracy
 
-            # print("MSL altitude:{}m = {}ft".format(altd,round(float(altd)/0.3048),4))
+            print("MSL altitude:{}m = {}ft".format(altd,round(float(altd)/0.3048),4))
             print("Speed over Ground:{} km/h".format(spdg))
-            # print("Course over Ground:{} degrees".format(csog))
-            # print("HDOP:{}".format(hdop))
-            # print("PDOP:{}".format(pdop))
-            # print("VDOP:{}".format(vdop))
+            print("Course over Ground:{} degrees".format(csog))
+            print("HDOP:{}".format(hdop))
+            print("PDOP:{}".format(pdop))
+            print("VDOP:{}".format(vdop))
+            print("C/N0 max:{} dBHz".format(cnom))
+            print("HPA:{} m".format(hpa0))
+            print("VPA:{} m".format(vpa0))
             print("GNSS Satellites in View:{}".format(gnsv))
             print("GNSS Satellites in Use:{}".format(gnsu))
             print("GLONASS in Use:{}".format(glns))
-            # print("C/N0 max:{} dBHz".format(cnom))
-            # print("HPA:{} m".format(hpa0))
+
             return spdg
 
 def main_with_pppd():
-    global stream_index
-    # Start the program by opening the cellular connection and creating a bucket for our data
-    if openPPPD():
-        # Wait long enough for the request to complete
-        for c in range(INIT_DELAY):
-            print ("Starting in T-minus {} second".format(INIT_DELAY-c))
-            sleep(1)
-        while True:
-            # Close the cellular connection
-            if closePPPD():
-                index=0 # reset counter after closing connection
-                sleep(1)
-            # The range is how many data points we'll collect before streaming
-            for i in range(DATA_POINT):
-                # Make sure there's a GPS fix
-                if checkForFix():
-                    # Get lat and long
-                    print("i = {}".format(i))
-                    if getCoord():
-                        index+=1
-                        latitude, longitude = getCoord()
-                        coord = "lat:" + str(latitude) + "," + "lgt:" + str(longitude)
-                        print (coord) # this is string formatted lat/lon
-                        print("Saving read #{} into buffer.".format(index))
-                        sleep(SECONDS_BETWEEN_READS) # 1 second
-                    # Turn the cellular connection on every 2 reads
-                    if i == DATA_POINT-1:
-                        sleep(1)
-                        print ("opening connection")
-                        if openPPPD():
-                            stream_index+=1
-
+    pass
 
 def main_without_pppd():
     global index
@@ -434,18 +414,73 @@ def getMAC():
 def getPublicIP():
     ipv4 = get('https://api.ipify.org').text
     ipv6 = get('https://api6.ipify.org').text
+    print("Public IPv4:".format(ipv4))
+    print("Public IPv6:".format(ipv6))
     return ipv4,ipv6
+
+def getSSID():
+    try:
+        output = subprocess.check_output(['sudo', 'iwgetid'],universal_newlines=True)
+        ssid = output.split('"')[1]
+        return ssid
+    except Exception:
+        pass
+
+def getLocalIP():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # doesn't even have to be reachable
+        s.connect(('10.255.255.255', 1))
+        IP = s.getsockname()[0]
+        print("Local IPv4:".format(IP))
+
+    except Exception:
+        IP = '127.0.0.1'
+    finally:
+        s.close()
+    return IP
+
+def execute_unix(inputcommand):
+    p = subprocess.Popen(inputcommand, stdout=subprocess.PIPE, shell=True)
+    (output, err) = p.communicate()
+    return output
+
 
 if __name__ == "__main__":
     try:
+
+        c = "espeak -ven-us -ven+f4 'Initializing Client' --stdout | aplay"
+        execute_unix(c)
+
+        print("client-{} is connected to {}".format(CLIENT_ID,getSSID()))
         hostname = socket.gethostname()
-        ip_address = socket.gethostbyname(hostname)
         print("hostname:{}".format(hostname))
-        print("IP address:{}".format(ip_address))
+        ip = getLocalIP();
+        ipv4,ipv6 = getPublicIP();
         print("MAC address:{}".format(getMAC()))
 
-        pubnub.add_listener(MySubscribeCallback())
-        ser=serial.Serial('/dev/ttyS0', BAUDRATE, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=1)
-        main_without_pppd()
+        mylcd = I2C_LCD_driver.lcd()
+        mylcd.lcd_display_string("Connected to:", 1)
+        mylcd.lcd_display_string(getSSID(), 2)
+        sleep(2)
+
+        mylcd.lcd_clear()
+        mylcd.lcd_display_string("Public IPv4:", 1)
+        mylcd.lcd_display_string(ipv4, 2)
+        sleep(2)
+
+        mylcd.lcd_clear()
+        mylcd.lcd_display_string("Local IPv4:", 1)
+        mylcd.lcd_display_string(ip, 2)
+        sleep(2)
+
+        mylcd.lcd_clear()
+        mylcd.lcd_display_string(getSSID(), 1)
+        mylcd.lcd_display_string(ip, 2)
+        sleep(2)
+
+        # pubnub.add_listener(MySubscribeCallback())
+        # # ser=serial.Serial('/dev/ttyUSB2', BAUDRATE, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=1)
+        # main_without_pppd()
     except KeyboardInterrupt:
         print("Turning off GPS\n")
