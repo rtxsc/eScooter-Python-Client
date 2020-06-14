@@ -1,3 +1,6 @@
+#! /bin/env python3
+import os
+import sys
 from os import system
 import serial
 import subprocess
@@ -217,9 +220,17 @@ def checkForFix():
                 return True
             # If a fix wasn't found, wait and try again
             if b"+CGNSINF: 1,0," in response:
+                c = "espeak -ven-us -ven+m1 'NO FIX FOUND' --stdout | aplay"
+                execute_unix(c)
+                c = "espeak -ven-us -ven+m1 'RESTARTING NOW' --stdout | aplay"
+                execute_unix(c)
                 sleep(5)
                 ser.write(b"AT+CGNSINF\r")
                 print ("Unable to find fix. still looking for fix...")
+                mylcd = I2C_LCD_driver.lcd()
+                mylcd.lcd_display_string("NO FIX FOUND", 1)
+                mylcd.lcd_display_string("RESTARTING...", 2)
+                os.execv(sys.executable, [sys.executable] + sys.argv)
             else:
                 ser.write(b"AT+CGNSINF\r")
 
@@ -442,6 +453,7 @@ def main_without_pppd():
                                 CLIENT_ID+"_longitude":     float(longitude),
                                 CLIENT_ID+"_activated":     bool(s1_activated),
                                 CLIENT_ID+"_moved":         bool(s1_moved),
+                                CLIENT_ID+"_alarm":         bool(scooterAlarm),
                                 CLIENT_ID+"_last_known":    s1_last_seen,
                                 CLIENT_ID+"_idle_time":     idle_time,
                                 CLIENT_ID+"_active_time":   active_time
