@@ -39,7 +39,7 @@ CHANNEL_ID = "robotronix"
 SERIAL_PORT = 'ttyUSB2'
 BAUDRATE = 115200
 SECONDS_BETWEEN_READS = 1
-STREAM_DELAY = 5
+STREAM_DELAY = 1
 INIT_DELAY = 1
 index = 0
 stream_index = 0
@@ -47,8 +47,8 @@ DATA_POINT = 2 # GPS lat/lgt recorded before transmission
 s1_activated = False
 s1_moved = False
 scooterAlarm = False
-serverActivation = False
-userActivation = False
+serverActivation = 0
+userActivation = 0
 
 meta = {
     'my': 'meta',
@@ -97,11 +97,7 @@ class MySubscribeCallback(SubscribeCallback):
                 # There was an error with the heartbeat operation, handle here
             else:
                 pass
-                # Heartbeat operation was successful
-
-        elif status.operation == PNStatusCategory.PNSignalResult:
-            print("something happen at PNSignalResult")
-            pass
+                # Heartbeat operation was successfu
         else:
             pass
             # Encountered unknown status type
@@ -116,17 +112,25 @@ class MySubscribeCallback(SubscribeCallback):
         print(receivedMessage)
         if "s_act" in receivedMessage:
             if "s_act_1" in receivedMessage:
-                serverActivation = True
+                serverActivation = 1
             else:
-                serverActivation = False
+                serverActivation = 0
 
-        if "u_act" in receivedMessage:
+        if "u_act_from_s" in receivedMessage:
             # logic for handshake
 
             if "u_act_1" in receivedMessage:
-                userActivation = True
+                userActivation = 1
             else:
-                userActivation = False
+                userActivation = 0
+
+        if "u_act_from_API" in receivedMessage:
+            # logic for handshake
+
+            if "u_act_1" in receivedMessage:
+                userActivation = 1
+            else:
+                userActivation = 0
 
         pass  # handle incoming messages
 
@@ -220,10 +224,8 @@ def checkForFix():
                 return True
             # If a fix wasn't found, wait and try again
             if b"+CGNSINF: 1,0," in response:
-                c = "espeak -ven-us -ven+m1 'NO FIX FOUND' --stdout | aplay"
-                execute_unix(c)
-                c = "espeak -ven-us -ven+m1 'RESTARTING NOW' --stdout | aplay"
-                execute_unix(c)
+                s = "/home/pi/./speech.sh Unable to find GPS FIX. Restarting now"
+                execute_unix(s)
                 sleep(5)
                 ser.write(b"AT+CGNSINF\r")
                 print ("Unable to find fix. still looking for fix...")
@@ -248,11 +250,11 @@ def getCoord():
             array = response.split(b",")
             lat = array[3]
             lon = array[4]
-            thingspeakHttp = BASE_URL + "&field2={:.2f}&field3={:.2f}".format(float(lat), float(lon))
-            print(thingspeakHttp)
-            conn = urlopen(thingspeakHttp)
-            print("Response: {}".format(conn.read()))
-            conn.close()
+            # thingspeakHttp = BASE_URL + "&field2={:.2f}&field3={:.2f}".format(float(lat), float(lon))
+            # print(thingspeakHttp)
+            # conn = urlopen(thingspeakHttp)
+            # print("Response: {}".format(conn.read()))
+            # conn.close()
             # print lon
             return (lat,lon) # return lat & lon value in byte form
 
@@ -305,24 +307,24 @@ def getNavigationInfo():
             print("Response: {}".format(conn.read()))
             conn.close()
 
-            thingspeakHttp = BASE_URL + "&field8={:.2f}".format(float(spdg))
-            print(thingspeakHttp)
-            conn = urlopen(thingspeakHttp)
-            print("Response: {}".format(conn.read()))
-            conn.close()
+            # thingspeakHttp = BASE_URL + "&field8={:.2f}".format(float(spdg))
+            # print(thingspeakHttp)
+            # conn = urlopen(thingspeakHttp)
+            # print("Response: {}".format(conn.read()))
+            # conn.close()
 
-            print("MSL altitude:{}m = {}ft".format(altd,round(float(altd)/0.3048),4))
+            # print("MSL altitude:{}m = {}ft".format(altd,round(float(altd)/0.3048),4))
             print("Speed over Ground:{} km/h".format(spdg))
-            print("Course over Ground:{} degrees".format(csog))
-            print("HDOP:{}".format(hdop))
-            print("PDOP:{}".format(pdop))
-            print("VDOP:{}".format(vdop))
-            print("C/N0 max:{} dBHz".format(cnom))
-            print("HPA:{} m".format(hpa0))
-            print("VPA:{} m".format(vpa0))
-            print("GNSS Satellites in View:{}".format(gnsv))
-            print("GNSS Satellites in Use:{}".format(gnsu))
-            print("GLONASS in Use:{}".format(glns))
+            # print("Course over Ground:{} degrees".format(csog))
+            # print("HDOP:{}".format(hdop))
+            # print("PDOP:{}".format(pdop))
+            # print("VDOP:{}".format(vdop))
+            # print("C/N0 max:{} dBHz".format(cnom))
+            # print("HPA:{} m".format(hpa0))
+            # print("VPA:{} m".format(vpa0))
+            # print("GNSS Satellites in View:{}".format(gnsv))
+            # print("GNSS Satellites in Use:{}".format(gnsu))
+            # print("GLONASS in Use:{}".format(glns))
 
             return spdg
 
@@ -357,21 +359,27 @@ def main_without_pppd():
         # .pn_async(here_now_callback)
 
         print("\n\nStream index:{} \n".format(index))
-        print("server act payload:{}".format(serverActivation))
-        print("user act payload:{}".format(userActivation))
+        # print("server act payload:{}".format(serverActivation))
+        # print("user act payload:{}".format(userActivation))
 
         # do the logic for anti-theft system here
         #  /__\  ( \( )(_  _)(_  _)    (_  _)( )_( )( ___)( ___)(_  _)
         # /(  )\  )  (   )(   _)(_       )(   ) _ (  )__)  )__)   )(
         #(__)(__)(_)\_) (__) (____)     (__) (_) (_)(____)(_)    (__)
+        if(userActivation):
+            u_act_payload = "u_act_1"
+        else:
+            u_act_payload = "u_act_0"
+
+        print("U_ACT_FROM_S PAYLOAD:{}".format(u_act_payload))
 
         s1_activated = (serverActivation and userActivation)
-
-        thingspeakHttp = BASE_URL + "&field1={:.2f}".format(s1_activated)
-        print(thingspeakHttp)
-        conn = urlopen(thingspeakHttp)
-        print("Response: {}".format(conn.read()))
-        conn.close()
+        
+        # thingspeakHttp = BASE_URL + "&field1={:.2f}".format(s1_activated)
+        # print(thingspeakHttp)
+        # conn = urlopen(thingspeakHttp)
+        # print("Response: {}".format(conn.read()))
+        # conn.close()
         if s1_activated:
             if not idle_flag:
                 idle_flag = True
@@ -379,6 +387,9 @@ def main_without_pppd():
                 idle_time = idle_end - idle_start
                 print("/////////////{} was IDLE for {} sec".format(CLIENT_ID,idle_time))
                 active_flag = True
+                s = "/home/pi/./speech.sh client-s1 is activated!"
+                execute_unix(s)
+
 
             if active_flag:
                 active_start = perf_counter()
@@ -396,6 +407,8 @@ def main_without_pppd():
                 active_time = active_end - active_start
                 print("/////////////{} was ACTIVE for {} sec".format(CLIENT_ID,active_time))
                 active_flag = True
+                s = "/home/pi/./speech.sh client-s1 has been deactivated!"
+                execute_unix(s)
 
 
         print("ACTIVATION_client-{}:{}".format(CLIENT_ID,s1_activated))
@@ -414,8 +427,8 @@ def main_without_pppd():
 
             if not s1_activated and s1_moved:
                 scooterAlarm = True
-                c = "espeak -ven-us -ven+f1 'Unauthorized Access Detected' --stdout | aplay"
-                execute_unix(c)
+                s = "/home/pi/./speech.sh Unauthorised usage. Do not move the scooter without proper authorization."
+                execute_unix(s)
 
             else:
                 scooterAlarm = False
@@ -433,12 +446,17 @@ def main_without_pppd():
 
                 coord = "lat:" + str(latitude) + "," + "lng:" + str(longitude)
                 print (coord)
-                print ("INDEX-----------------------------:{}".format(index))
                 mylcd.lcd_clear()
-                mylcd.lcd_display_string("S1-ACT:", 1)
-                mylcd.lcd_display_string_pos(str(s1_activated),1,7)
-                mylcd.lcd_display_string("UPDATE:", 2)
-                mylcd.lcd_display_string_pos(str(index),2,7)
+                mylcd.lcd_display_string("S:", 1)
+                mylcd.lcd_display_string_pos(str(serverActivation),1,2) #S:0 U:0 A:0 AL:0
+                mylcd.lcd_display_string_pos("U:",1,4)
+                mylcd.lcd_display_string_pos(str(userActivation),1,6)
+                mylcd.lcd_display_string_pos("A:",1,8)
+                mylcd.lcd_display_string_pos(str(s1_activated),1,10)
+                mylcd.lcd_display_string_pos("AL:",1,12)
+                mylcd.lcd_display_string_pos(str(scooterAlarm),1,15)
+                mylcd.lcd_display_string("U:", 2)
+                mylcd.lcd_display_string_pos(str(index),2,2)
                 # create JSON dictionary (payload)
                 ipv4,ipv6 = getPublicIP()
 
@@ -457,6 +475,7 @@ def main_without_pppd():
                                 CLIENT_ID+"_last_known":    s1_last_seen,
                                 CLIENT_ID+"_idle_time":     idle_time,
                                 CLIENT_ID+"_active_time":   active_time
+                                # "u_act":                    u_act_payload
 
                                 }
                 pubnub.publish().channel(CHANNEL_ID).message(payload).pn_async(publish_callback)
@@ -506,8 +525,9 @@ def execute_unix(inputcommand):
 if __name__ == "__main__":
     try:
 
-        c = "espeak -ven-us -ven+m1 'Initializing Client' --stdout | aplay"
-        execute_unix(c)
+        # c = "espeak -ven-us -ven+m7 'Initializing Client' --stdout | aplay"
+        s = "/home/pi/./speech.sh Initializing GNSS tracking. this is client-s1"
+        execute_unix(s)
 
         print("client-{} is connected to {}".format(CLIENT_ID,getSSID()))
         hostname = socket.gethostname()
@@ -523,24 +543,28 @@ if __name__ == "__main__":
         mylcd = I2C_LCD_driver.lcd()
         mylcd.lcd_display_string("Connected to:", 1)
         mylcd.lcd_display_string(getSSID(), 2)
-        sleep(2)
+        sleep(1)
 
         mylcd.lcd_clear()
         mylcd.lcd_display_string("Public IPv4:", 1)
         mylcd.lcd_display_string(ipv4, 2)
-        sleep(2)
+        sleep(1)
 
         mylcd.lcd_clear()
         mylcd.lcd_display_string("Local IPv4:", 1)
         mylcd.lcd_display_string(ip, 2)
-        sleep(2)
+        sleep(1)
 
         mylcd.lcd_clear()
         mylcd.lcd_display_string(getSSID(), 1)
         mylcd.lcd_display_string(ip, 2)
-        sleep(2)
+        sleep(1)
 
         pubnub.add_listener(MySubscribeCallback())
         main_without_pppd()
     except KeyboardInterrupt:
+        mylcd.lcd_clear()
+        mylcd.lcd_display_string("BYE BYE", 1)
+        mylcd.lcd_display_string("Shutting Down", 2)
+        sleep(1)
         print("Turning off GPS for client-{}\n".format(CLIENT_ID))
