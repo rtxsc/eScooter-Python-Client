@@ -1,4 +1,5 @@
 #! /bin/env python3
+import math
 import os
 import sys
 from os import system
@@ -298,13 +299,13 @@ def getNavigationInfo():
             thingspeakHttp = BASE_URL + "&field4={:.2f}&field5={:.2f}".format(float(gnsv),float(gnsu))
             print(thingspeakHttp)
             conn = urlopen(thingspeakHttp)
-            print("Response: {}".format(conn.read()))
+            # print("Response: {}".format(conn.read()))
             conn.close()
 
             thingspeakHttp = BASE_URL + "&field6={:.2f}&field7={:.2f}".format(float(glns),float(hpa0))
             print(thingspeakHttp)
             conn = urlopen(thingspeakHttp)
-            print("Response: {}".format(conn.read()))
+            # print("Response: {}".format(conn.read()))
             conn.close()
 
             # thingspeakHttp = BASE_URL + "&field8={:.2f}".format(float(spdg))
@@ -331,11 +332,35 @@ def getNavigationInfo():
 def main_with_pppd():
     pass
 
+def calcDistance(lon1,lat1,lon2,lat2):
+    R = 6373.0 # radius of the Earth in KM
+
+    # coordinates
+    lat1 = math.radians(lat1)
+    lon1 = math.radians(lon1)
+    lat2 = math.radians(lat2)
+    lon2 = math.radians(lon2)
+
+    # change in coordinates
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    # Haversine formula
+    a = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    distance = R * c
+    print("------------------------------------------>Distance: {} KM".format(distance))
+    return distance
+
 def main_without_pppd():
     global index
     global serverActivation
     global userActivation
-    s1_last_seen = ""
+    start_coordinate_set = False
+    stop_coordinate_set = False
+    s1_last_seen = 0,0
+    s1_start_coordinate = 0,0
+    s1_stop_coordinate = 0,0
+
 
     idle_time = 0.0
     active_time = 0.0
@@ -374,7 +399,7 @@ def main_without_pppd():
         print("U_ACT_FROM_S PAYLOAD:{}".format(u_act_payload))
 
         s1_activated = (serverActivation and userActivation)
-        
+
         # thingspeakHttp = BASE_URL + "&field1={:.2f}".format(s1_activated)
         # print(thingspeakHttp)
         # conn = urlopen(thingspeakHttp)
@@ -387,6 +412,8 @@ def main_without_pppd():
                 idle_time = idle_end - idle_start
                 print("/////////////{} was IDLE for {} sec".format(CLIENT_ID,idle_time))
                 active_flag = True
+                start_coordinate_set = False
+                stop_coordinate_set = True
                 s = "/home/pi/./speech.sh client-s1 is activated!"
                 execute_unix(s)
 
@@ -407,6 +434,8 @@ def main_without_pppd():
                 active_time = active_end - active_start
                 print("/////////////{} was ACTIVE for {} sec".format(CLIENT_ID,active_time))
                 active_flag = True
+                start_coordinate_set = True
+                stop_coordinate_set = False
                 s = "/home/pi/./speech.sh client-s1 has been deactivated!"
                 execute_unix(s)
 
@@ -420,10 +449,10 @@ def main_without_pppd():
             groundSpeed = getNavigationInfo()
             gndSpeed = float(groundSpeed)
 
-            if gndSpeed is not 0.00:
-                s1_moved = False
+            if gndSpeed is not 0.0:
+                s1_moved = 0
             else:
-                s1_moved = True
+                s1_moved = 1
 
             if not s1_activated and s1_moved:
                 scooterAlarm = True
@@ -438,14 +467,28 @@ def main_without_pppd():
             if getCoord():
                 index+=1
                 latitude, longitude = getCoord() # live coordinates
+                current_coordinate = float(longitude),float(latitude)
 
                 if not s1_activated:
                     s1_last_seen = float(longitude),float(latitude)
+                    if not stop_coordinate_set:
+                        s1_stop_coordinate = s1_last_seen
+                    else:
+                        pass
                 else:
-                    s1_last_seen = 90,90 # default to 90,90 when moving
+                    if not start_coordinate_set:
+                        s1_start_coordinate = s1_last_seen
+                    else:
+                        pass
 
-                coord = "lat:" + str(latitude) + "," + "lng:" + str(longitude)
-                print (coord)
+                # coord = "lat:" + str(latitude) + "," + "lng:" + str(longitude)
+                # print (coord)
+                print("start location:{}".format(s1_start_coordinate))
+                print("current location:{}".format(current_coordinate))
+                print("stop location:{}".format(s1_stop_coordinate))
+                distance = calcDistance(current_coordinate[0],current_coordinate[1],s1_start_coordinate[0],s1_start_coordinate[1])
+
+
                 mylcd.lcd_clear()
                 mylcd.lcd_display_string("S:", 1)
                 mylcd.lcd_display_string_pos(str(serverActivation),1,2) #S:0 U:0 A:0 AL:0
@@ -456,9 +499,14 @@ def main_without_pppd():
                 mylcd.lcd_display_string_pos("AL:",1,12)
                 mylcd.lcd_display_string_pos(str(scooterAlarm),1,15)
                 mylcd.lcd_display_string("U:", 2)
-                mylcd.lcd_display_string_pos(str(index),2,2)
+                mylcd.lcd_display_string_pos(str(index),2,2) #U:000__
+                mylcd.lcd_display_string_pos("V:",2,6) #U:000 V:0.0_M:
+                mylcd.lcd_display_string_pos(str(gndSpeed),2,8) #U:000 V:0.0_M:
+                mylcd.lcd_display_string_pos("M:",2,12) #U:000 V:0.0_M:
+                mylcd.lcd_display_string_pos(str(s1_moved),2,14) #U:0 V:0.0 M:0
                 # create JSON dictionary (payload)
-                ipv4,ipv6 = getPublicIP()
+                if(index<2):
+                    ipv4,ipv6 = getPublicIP()
 
                 payload =       {
                                 CLIENT_ID+"_index":         float(index),
@@ -473,6 +521,9 @@ def main_without_pppd():
                                 CLIENT_ID+"_moved":         bool(s1_moved),
                                 CLIENT_ID+"_alarm":         bool(scooterAlarm),
                                 CLIENT_ID+"_last_known":    s1_last_seen,
+                                CLIENT_ID+"_start_coord":   s1_start_coordinate,
+                                CLIENT_ID+"_stop_coord":    s1_stop_coordinate,
+                                CLIENT_ID+"_mileage":       distance,
                                 CLIENT_ID+"_idle_time":     idle_time,
                                 CLIENT_ID+"_active_time":   active_time
                                 # "u_act":                    u_act_payload
@@ -526,7 +577,7 @@ if __name__ == "__main__":
     try:
 
         # c = "espeak -ven-us -ven+m7 'Initializing Client' --stdout | aplay"
-        s = "/home/pi/./speech.sh Initializing GNSS tracking. this is client-s1"
+        s = "/home/pi/./speech.sh Initializing GNSS"
         execute_unix(s)
 
         print("client-{} is connected to {}".format(CLIENT_ID,getSSID()))
@@ -563,6 +614,8 @@ if __name__ == "__main__":
         pubnub.add_listener(MySubscribeCallback())
         main_without_pppd()
     except KeyboardInterrupt:
+        s = "/home/pi/./speech.sh Shutting down"
+        execute_unix(s)
         mylcd.lcd_clear()
         mylcd.lcd_display_string("BYE BYE", 1)
         mylcd.lcd_display_string("Shutting Down", 2)
