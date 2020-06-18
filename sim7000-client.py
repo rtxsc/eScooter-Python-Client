@@ -19,6 +19,39 @@ from pubnub.pubnub import PubNub
 from pubnub.callbacks import SubscribeCallback
 from pubnub.enums import PNOperationType, PNStatusCategory
 
+from board import SCL, SDA
+import busio
+from PIL import Image, ImageDraw, ImageFont
+import adafruit_ssd1306
+# Create the I2C interface.
+i2c = busio.I2C(SCL, SDA)
+
+disp = adafruit_ssd1306.SSD1306_I2C(128, 32, i2c)
+# Clear display.
+disp.fill(0)
+disp.show()
+# Create blank image for drawing.
+# Make sure to create image with mode '1' for 1-bit color.
+width = disp.width
+height = disp.height
+image = Image.new("1", (width, height))
+# Get drawing object to draw on image.
+draw = ImageDraw.Draw(image)
+# Draw a black filled box to clear the image.
+draw.rectangle((0, 0, width, height), outline=0, fill=0)
+
+# Draw some shapes.
+# First define some constants to allow easy resizing of shapes.
+padding = -2
+top = padding
+bottom = height - padding
+#Move left to right keeping track of the current x position for drawing shapes.
+x = 0
+# Load default font.
+font = ImageFont.load_default()
+# Draw a black filled box to clear the image.
+draw.rectangle((0, 0, width, height), outline=0, fill=0)
+
 import I2C_LCD_driver
 from urllib.request import urlopen
 WRITE_API = "M2U5M5J6ASD8MGZ7"
@@ -110,7 +143,13 @@ class MySubscribeCallback(SubscribeCallback):
         global serverActivation
         global userActivation
         receivedMessage = json.dumps(message.message)
-        print(receivedMessage)
+        # print(receivedMessage)
+        if "askingForAck" in receivedMessage:
+            print("REQUEST RECEIVED!")
+            payload = { "handshakeAck" : True}
+            print("handshakeAck from server to user:{}".format(payload))
+            pubnub.publish().channel(CHANNEL_ID).message(payload).pn_async(publish_callback)
+            
         if "s_act" in receivedMessage:
             if "s_act_1" in receivedMessage:
                 serverActivation = 1
@@ -127,7 +166,6 @@ class MySubscribeCallback(SubscribeCallback):
 
         if "u_act_from_API" in receivedMessage:
             # logic for handshake
-
             if "u_act_1" in receivedMessage:
                 userActivation = 1
             else:
@@ -573,9 +611,19 @@ def execute_unix(inputcommand):
     return output
 
 
+
+
 if __name__ == "__main__":
     try:
 
+        # Shell scripts for system monitoring from here:
+        # https://unix.stackexchange.com/questions/119126/command-to-display-memory-usage-disk-usage-and-cpu-load
+        cmd = "hostname -I | cut -d' ' -f1"
+        IP = subprocess.check_output(cmd, shell=True).decode("utf-8")
+        draw.text((x, top + 0), "IP: " + IP, font=font, fill=255)
+        # Display image.
+        disp.image(image)
+        disp.show()
         # c = "espeak -ven-us -ven+m7 'Initializing Client' --stdout | aplay"
         s = "/home/pi/./speech.sh Initializing GNSS"
         execute_unix(s)
