@@ -7,6 +7,8 @@ def execute_unix(inputcommand):
     (output, err) = p.communicate()
     return output
 
-for i in range(5,121):
-    s = "sudo rm -r gps-history-f"+str(i)+".txt"
+for i in range(1,8+1):
+    # s = "sudo rm -r data"+str(i)+".txt"
+    s = "sudo rm -r geojson"+str(i)+".txt"
+
     execute_unix(s)
