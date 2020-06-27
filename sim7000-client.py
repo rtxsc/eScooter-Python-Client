@@ -8,6 +8,7 @@ from telegram.ext import MessageHandler, Filters
 import logging
 import requests
 import telegram
+import twilio
 from twilio.rest import Client
 import math
 import os
@@ -35,23 +36,74 @@ import busio
 from PIL import Image, ImageDraw, ImageFont
 import adafruit_ssd1306
 
+pid = os.getpid()
+print(pid)
 
-bot = telegram.Bot(token='')
-print(bot.get_me())
-updater = Updater(token='', use_context=True)
-dispatcher = updater.dispatcher
+def execute_unix(inputcommand):
+    p = subprocess.Popen(inputcommand, stdout=subprocess.PIPE, shell=True)
+    (output, err) = p.communicate()
+    return output
 
+try:
+    print("Connecting to Telegram...")
+    bot = telegram.Bot(token='')
+    # print(bot.get_me())
+    updater = Updater(token='', use_context=True)
+    dispatcher = updater.dispatcher
+except telegram.error.InvalidToken:
+    print("Invalid Telegram token...Restarting...")
+    s = "/home/pi/./speech.sh Invalid Telegram token. Restarting..."
+    execute_unix(s)
+    os.execv(sys.executable, [sys.executable] + sys.argv)
 
-# Your Account Sid and Auth Token from twilio.com/console
-# DANGER! This is insecure. See http://twil.io/secure
-account_sid = ''
-auth_token = ''
-client = Client(account_sid, auth_token)
+try:
+    print("Connecting to Twilio...")
+    # Your Account Sid and Auth Token from twilio.com/console
+    # DANGER! This is insecure. See http://twil.io/secure
+    account_sid = ''
+    auth_token = ''
+    client = Client(account_sid, auth_token)
+except twilio.base.exceptions.TwilioException:
+    print("Invalid Twilio token...Restarting...")
+    s = "/home/pi/./speech.sh Credentials are required to create a TwilioClient. Restarting..."
+    execute_unix(s)
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
 
 # Create the I2C interface.
-i2c = busio.I2C(SCL, SDA)
-import I2C_LCD_driver
-mylcd = I2C_LCD_driver.lcd()
+try:
+    print("Connecting to i2c interfaces...")
+    i2c = busio.I2C(SCL, SDA)
+    import I2C_LCD_driver
+    mylcd = I2C_LCD_driver.lcd()
+    disp = adafruit_ssd1306.SSD1306_I2C(128, 32, i2c)
+    # Clear display.
+    disp.fill(0)
+    disp.show()
+    # Create blank image for drawing.
+    # Make sure to create image with mode '1' for 1-bit color.
+    width = disp.width
+    height = disp.height
+    image = Image.new("1", (width, height))
+    # Get drawing object to draw on image.
+    draw = ImageDraw.Draw(image)
+    # Draw a black filled box to clear the image.
+    draw.rectangle((0, 0, width, height), outline=0, fill=0)
+    # Draw some shapes.
+    # First define some constants to allow easy resizing of shapes.
+    padding = -2
+    top = padding
+    bottom = height - padding
+    #Move left to right keeping track of the current x position for drawing shapes.
+    x = 0
+    # Load default font.
+    font = ImageFont.load_default()
+    # Draw a black filled box to clear the image.
+    draw.rectangle((0, 0, width, height), outline=0, fill=0)
+except OSError:
+    s = "/home/pi/./speech.sh Remote i-squared-c Error. Restarting..."
+    execute_unix(s)
+    os.execv(sys.executable, [sys.executable] + sys.argv)
 
 data = {}
 data['coordinates'] = []
@@ -60,31 +112,7 @@ geojson_index = 0
 fileNum = 0
 duplication = 0
 saveCounter = 0
-disp = adafruit_ssd1306.SSD1306_I2C(128, 32, i2c)
-# Clear display.
-disp.fill(0)
-disp.show()
-# Create blank image for drawing.
-# Make sure to create image with mode '1' for 1-bit color.
-width = disp.width
-height = disp.height
-image = Image.new("1", (width, height))
-# Get drawing object to draw on image.
-draw = ImageDraw.Draw(image)
-# Draw a black filled box to clear the image.
-draw.rectangle((0, 0, width, height), outline=0, fill=0)
 
-# Draw some shapes.
-# First define some constants to allow easy resizing of shapes.
-padding = -2
-top = padding
-bottom = height - padding
-#Move left to right keeping track of the current x position for drawing shapes.
-x = 0
-# Load default font.
-font = ImageFont.load_default()
-# Draw a black filled box to clear the image.
-draw.rectangle((0, 0, width, height), outline=0, fill=0)
 
 from urllib.request import urlopen
 # WRITE_API = "M2U5M5J6ASD8MGZ7" #1st channel
@@ -720,10 +748,7 @@ def getLocalIP():
         s.close()
     return IP
 
-def execute_unix(inputcommand):
-    p = subprocess.Popen(inputcommand, stdout=subprocess.PIPE, shell=True)
-    (output, err) = p.communicate()
-    return output
+
 
 def save_geojson_to_file(fileNum):
     global data
@@ -814,7 +839,7 @@ if __name__ == "__main__":
         dispatcher.add_handler(getLocationHandler)
         logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',level=logging.INFO)
         updater.start_polling()
-        telegram_bot_sendtext("@clientsS1Bot is activated!")
+        telegram_bot_sendtext("@clientsS1Bot is initializing!")
         main_without_pppd()
     except RuntimeError:
         s = "/home/pi/./speech.sh Runtime Error Detected! Restarting now..."
@@ -823,8 +848,13 @@ if __name__ == "__main__":
         mylcd.lcd_display_string("RUNTIME ERROR", 1)
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
+    except OSError:
+        s = "/home/pi/./speech.sh Remote I O Error. Restarting..."
+        execute_unix(s)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+
     except KeyboardInterrupt:
-        telegram_bot_sendtext("@clientsS1Bot is deactivated!")
+        telegram_bot_sendtext("@clientsS1Bot is going offline!")
         save_geojson_to_file(fileNum)
         s = "/home/pi/./speech.sh Shutting down"
         execute_unix(s)
