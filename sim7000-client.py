@@ -12,6 +12,7 @@ import twilio
 from twilio.rest import Client
 import math
 import os
+import psutil
 import sys
 from os import system
 import serial
@@ -31,13 +32,43 @@ from pubnub.pubnub import PubNub, SubscribeListener
 from pubnub.callbacks import SubscribeCallback
 from pubnub.enums import PNOperationType, PNStatusCategory
 
+from gpiozero import LED
 from board import SCL, SDA
 import busio
 from PIL import Image, ImageDraw, ImageFont
 import adafruit_ssd1306
 
+red = LED(20)
+grn = LED(21)
+procPID = ""
 pid = os.getpid()
 print(pid)
+
+process_name = "python3"
+
+def checkIfProcessRunning(processName):
+    global procPID
+    '''
+    Check if there is any running process that contains the given name processName.
+    '''
+    #Iterate over the all the running process
+    for proc in psutil.process_iter():
+        print(proc)
+        try:
+            # Check if process name contains the given name string.
+            if processName.lower() in proc.name().lower():
+                procPID = str(proc.pid)
+                # print("Python3 is affiliated with PID:" + str(proc.pid))
+                return True
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            pass
+    return False
+
+if checkIfProcessRunning(process_name):
+    pid_found = "Python3 PID: "+ procPID
+else:
+    pid_found = "Python3 aborted"
+
 
 def execute_unix(inputcommand):
     p = subprocess.Popen(inputcommand, stdout=subprocess.PIPE, shell=True)
@@ -46,9 +77,9 @@ def execute_unix(inputcommand):
 
 try:
     print("Connecting to Telegram...")
-    bot = telegram.Bot(token='')
+    bot = telegram.Bot(token='1242269165:AAHDaelCeHjZBAvFyOxHrgXjwo2SxYzT1PY')
     # print(bot.get_me())
-    updater = Updater(token='', use_context=True)
+    updater = Updater(token='1242269165:AAHDaelCeHjZBAvFyOxHrgXjwo2SxYzT1PY', use_context=True)
     dispatcher = updater.dispatcher
 except telegram.error.InvalidToken:
     print("Invalid Telegram token...Restarting...")
@@ -60,8 +91,8 @@ try:
     print("Connecting to Twilio...")
     # Your Account Sid and Auth Token from twilio.com/console
     # DANGER! This is insecure. See http://twil.io/secure
-    account_sid = ''
-    auth_token = ''
+    account_sid = 'AC93e0ce8c7f637352219ab3f6e71bbe34'
+    auth_token = '21c6de8a8d64d3db887c23b2417ba5ed'
     client = Client(account_sid, auth_token)
 except twilio.base.exceptions.TwilioException:
     print("Invalid Twilio token...Restarting...")
@@ -519,6 +550,8 @@ def main_without_pppd():
         s1_activated = (serverActivation and userActivation)
 
         if s1_activated:
+            red.off()
+            grn.on()
             Nearby = True
             if not idle_flag:
                 idle_flag = True
@@ -537,6 +570,8 @@ def main_without_pppd():
             # print("Scooter {} is now active for {:.1f} sec".format(CLIENT_ID,perf_counter()-active_start))
 
         else:
+            red.on()
+            grn.off()
             Nearby = False
             if idle_flag:
                 idle_start = perf_counter()
@@ -800,7 +835,8 @@ if __name__ == "__main__":
         ssid = getSSID()
         draw.text((x, top + 0), "IP: " + IP, font=font, fill=255)
         draw.text((x, top + 8), ssid, font=font, fill=255)
-        draw.text((x, top + 16), ssid, font=font, fill=255)
+        draw.text((x, top + 16), "PID:" + str(pid), font=font, fill=255)
+        draw.text((x, top + 24), pid_found, font=font, fill=255)
         # Display image.
         disp.image(image)
         disp.show()
