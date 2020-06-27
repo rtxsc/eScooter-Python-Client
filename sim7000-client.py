@@ -77,9 +77,9 @@ def execute_unix(inputcommand):
 
 try:
     print("Connecting to Telegram...")
-    bot = telegram.Bot(token='1242269165:AAHDaelCeHjZBAvFyOxHrgXjwo2SxYzT1PY')
+    bot = telegram.Bot(token='')
     # print(bot.get_me())
-    updater = Updater(token='1242269165:AAHDaelCeHjZBAvFyOxHrgXjwo2SxYzT1PY', use_context=True)
+    updater = Updater(token='', use_context=True)
     dispatcher = updater.dispatcher
 except telegram.error.InvalidToken:
     print("Invalid Telegram token...Restarting...")
@@ -200,7 +200,7 @@ class GoogleReverse(GoogleQuery):
 
     _URL = 'https://maps.googleapis.com/maps/api/geocode/json'
     _RESULT_CLASS = GoogleResult
-    _KEY = 'AIzaSyBGvn5IKpL8dpo8DPl_kx-Xc4VGWIu86Dw'
+    _KEY = ''
     _KEY_MANDATORY = False
 
     def _location_init(self, location, **kwargs):

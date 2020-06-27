@@ -5,3 +5,4 @@
 ### pip3 install python-telegram-bot --upgrade
 ### pip3 install twilio
 ### pip3 install reverse_geocoder
+### pip3 install google-speech
