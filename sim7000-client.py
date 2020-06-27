@@ -1,4 +1,13 @@
 #! /bin/env python3
+from __future__ import absolute_import
+from geocoder.google import GoogleResult, GoogleQuery
+from geocoder.location import Location
+from telegram.ext import CommandHandler
+from telegram.ext import Updater
+from telegram.ext import MessageHandler, Filters
+import logging
+import requests
+import telegram
 from twilio.rest import Client
 import math
 import os
@@ -13,6 +22,8 @@ import json
 import socket
 from requests import get # to get Public IP address
 import uuid, re # to get MAC address
+import reverse_geocoder as rg
+import pprint
 
 from pubnub.pnconfiguration import PNConfiguration
 from pubnub.pubnub import PubNub, SubscribeListener
@@ -24,10 +35,17 @@ import busio
 from PIL import Image, ImageDraw, ImageFont
 import adafruit_ssd1306
 
+
+bot = telegram.Bot(token='')
+print(bot.get_me())
+updater = Updater(token='', use_context=True)
+dispatcher = updater.dispatcher
+
+
 # Your Account Sid and Auth Token from twilio.com/console
 # DANGER! This is insecure. See http://twil.io/secure
-account_sid = 'AC93e0ce8c7f637352219ab3f6e71bbe34'
-auth_token = '3cb28c9d23d966500d856988e9eb911b'
+account_sid = ''
+auth_token = ''
 client = Client(account_sid, auth_token)
 
 # Create the I2C interface.
@@ -41,6 +59,7 @@ geojson_list = []
 geojson_index = 0
 fileNum = 0
 duplication = 0
+saveCounter = 0
 disp = adafruit_ssd1306.SSD1306_I2C(128, 32, i2c)
 # Clear display.
 disp.fill(0)
@@ -97,13 +116,15 @@ s1_moved = False
 scooterAlarm = False
 serverActivation = 0
 userActivation = 0
+SMSalert = False
 spdg = 0
+userUUID = "None"
 
 meta = {
     'my': 'meta',
     'name': 'PubNub'
 }
-pubnub.publish().channel(CHANNEL_ID).meta(meta).message("hello from client-"+CLIENT_ID).sync()
+pubnub.publish().channel(CHANNEL_ID).meta(meta).message("hello from @client"+CLIENT_ID+"Bot").sync()
 
 def my_publish_callback(envelope, status):
     # Check whether request successfully completed or not
@@ -114,6 +135,20 @@ def my_publish_callback(envelope, status):
         # because of which request did fail.
         # Request can be resent using: [status retry];
 
+class GoogleReverse(GoogleQuery):
+    provider = 'google'
+    method = 'reverse'
+
+    _URL = 'https://maps.googleapis.com/maps/api/geocode/json'
+    _RESULT_CLASS = GoogleResult
+    _KEY = 'AIzaSyBGvn5IKpL8dpo8DPl_kx-Xc4VGWIu86Dw'
+    _KEY_MANDATORY = False
+
+    def _location_init(self, location, **kwargs):
+        return {
+            'latlng': str(Location(location)),
+            'sensor': 'false',
+        }
 
 class MySubscribeCallback(SubscribeCallback):
     def presence(self, pubnub, presence):
@@ -143,8 +178,10 @@ class MySubscribeCallback(SubscribeCallback):
         # Handle new message stored in message.message
         global serverActivation
         global userActivation
+        global userUUID
         receivedMessage = json.dumps(message.message)
-        print("PAYLOAD FROM ANYONE:{}".format(receivedMessage))
+        usertUUID = "Comot"
+        print("PAYLOAD FROM ANYONE:{} by {}".format(receivedMessage, userUUID))
 
         if "s_act" in receivedMessage:
             if "s_act_1" in receivedMessage:
@@ -292,6 +329,7 @@ def getCoord():
     global spdg
     global fileNum
     global duplication
+    global saveCounter
     prevLat = 0.0
     prevLon = 0.0
     # Start the serial connection SIM7000E
@@ -301,8 +339,8 @@ def getCoord():
     while True:
         response = ser.readline()
         if b"+CGNSINF: 1," in response:
-            if(geojson_index > 10):
-                # fileNum += 1
+            if(geojson_index > 99):
+                saveCounter += 1
                 save_geojson_to_file(fileNum)
                 geojson_index = 0
             # Split the reading by commas and return the parts referencing lat and long
@@ -403,10 +441,13 @@ def calcDistance(lon1,lat1,lon2,lat2):
     return distance
 
 def main_without_pppd():
+    pubnub.add_listener(MySubscribeCallback())
     global index
     global geojson_index
     global serverActivation
     global userActivation
+    global scooterAlarm
+    global SMSalert
     global spdg
 
     start_coordinate_set = False
@@ -424,12 +465,7 @@ def main_without_pppd():
         print ("Starting in T-minus {} second".format(INIT_DELAY-c))
         sleep(1)
 
-    pubnub.add_listener(MySubscribeCallback())
-    file = open("geojson.txt","w+")
-    for i in range(10):
-        file.write("This is line %d\r\n" % (i+1))
 
-    file.close()
     while True:
         # start listening to the channel from incoming messages
         pubnub.subscribe()\
@@ -517,15 +553,16 @@ def main_without_pppd():
 
             # payload = serverActivation,userActivation,Nearby,s1_activated,s1_moved,gndSpeed,scooterAlarm,SMSalert
 
-            # thingspeakHttp = BASE_URL + "&field1={:.2f}&field2={:.2f}&field3={:.2f}&field4={:.2f}&field5={:.2f}&field6={:.2f}&field7={:.2f}&field8={:.2f}".format(serverActivation,userActivation,Nearby,s1_activated,s1_moved,gndSpeed,scooterAlarm,SMSalert)
-            # conn = urlopen(thingspeakHttp)
-            # conn.close()
+            thingspeakHttp = BASE_URL + "&field1={:.2f}&field2={:.2f}&field3={:.2f}&field4={:.2f}&field5={:.2f}&field6={:.2f}&field7={:.2f}&field8={:.2f}".format(serverActivation,userActivation,Nearby,s1_activated,s1_moved,gndSpeed,scooterAlarm,SMSalert)
+            conn = urlopen(thingspeakHttp)
+            conn.close()
 
             # print("standby_alarm_S1:{}".format(scooterAlarm))
             # Get lat and long
             if getCoord():
                 latitude, longitude = getCoord() # live coordinates
                 current_coordinate = float(longitude),float(latitude)
+                locateMePlease = float(latitude),float(longitude)
 
                 if not s1_activated:
                     s1_last_seen = float(longitude),float(latitude)
@@ -543,19 +580,26 @@ def main_without_pppd():
                 if not s1_activated and s1_moved:
                     scooterAlarm = 1
                     SMSalert = True
-                    s = "/home/pi/./speech.sh Unauthorised usage detected!"
+                    s = "/home/pi/./speech.sh Unauthorised usage detected!Sending SMS and Telegram Alert"
                     execute_unix(s)
+                    # reverseGeocode(locateMePlease)
+                    result = GoogleReverse((float(latitude), float(longitude)))
+                    telegram_bot_sendtext("\
+                    Unauthorised Usage of @clientsS1Bot\n\
+                    Here are the location info:\n\
+                    Last seen coordinate:{}\n\
+                    Address:{}".format(locateMePlease,str(result.address)))
 
+                    message = client.messages \
+                                    .create(
+                                         body="\
+                                         Unauthorised Usage of @clientsS1Bot\n\nHere are the location info:\n\nLast seen coordinate:{}\n\nAddress:{}".format(locateMePlease,str(result.address)),
+                                         from_='+12058102291',
+                                         to='+60198285105' # '+15558675310'
+                                     )
 
+                    print(message.sid)
 
-                    # message = client.messages \
-                    #                 .create(
-                    #                      body="Unauthorised usage of Client-S1. Last seen location is {}".format(s1_last_seen),
-                    #                      from_='+12058102291',
-                    #                      to='+60198285105' # '+15558675310'
-                    #                  )
-                    #
-                    # print(message.sid)
                 else:
                     scooterAlarm = 0
                     SMSalert = False
@@ -591,6 +635,7 @@ def main_without_pppd():
                 mylcd.lcd_display_string_pos(str(s1_moved),2,9)
                 mylcd.lcd_display_string_pos("G",2,11)
                 mylcd.lcd_display_string_pos(str(geojson_index),2,12)
+                mylcd.lcd_display_string_pos(str(saveCounter),2,14)
                 # create JSON dictionary (payload)
                 if(index<2):
                     ipv4,ipv6 = getPublicIP()
@@ -598,6 +643,7 @@ def main_without_pppd():
                 payload =       {
                                 CLIENT_ID+"_index":         float(index),
                                 CLIENT_ID+"_mac_address":   getMAC(),
+                                CLIENT_ID+"_local_ipv4":    getLocalIP(),
                                 CLIENT_ID+"_public_ipv4":   ipv4,
                                 CLIENT_ID+"_public_ipv6":   ipv6,
                                 CLIENT_ID+"_uuid":          pubnub.uuid,
@@ -637,7 +683,7 @@ def main_without_pppd():
 
                 """
 
-                # pubnub.publish().channel(CHANNEL_ID).message(payload).pn_async(publish_callback)
+                pubnub.publish().channel(CHANNEL_ID).message(payload).pn_async(publish_callback)
                 # print("\nNext stream in:\n")
                 for c in range(STREAM_DELAY): # default to 5
                     sleep(SECONDS_BETWEEN_READS)
@@ -690,15 +736,32 @@ def save_geojson_to_file(fileNum):
         data = json.load(json_file)
         for p in data['coordinates']:
             num += 1
-            print('['+str(p['lon'])+","+str(p['lat'])+'],' + "New Coordinate Points:{}".format(num))
+            # print('['+str(p['lon'])+","+str(p['lat'])+'],' + "New Coordinate Points:{}".format(num))
             # stringify = str(str(p['lon'])+","+str(p['lat']))
             stringify = str('['+str(p['lon'])+","+str(p['lat'])+'],')
             # # collect this format into another array
             geojson_list.append(stringify)
-            print("Total GEOJSON point:{}".format(len(geojson_list)))
+            # print("Total GEOJSON point:{}".format(len(geojson_list)))
         # print(geojson_list)
     with open('/home/pi/eScooter-Python-Client/geojson/geojson{}.txt'.format(fileNum), 'w') as outfile:
         json.dump(geojson_list, outfile)
+
+def reverseGeocode(coordinates):
+	result = rg.search(coordinates)
+	# result is a list containing ordered dictionary.
+	pprint.pprint("Last seen location found:{}".format(result))
+
+def telegram_bot_sendtext(bot_message):
+
+    bot_token = '1242269165:AAHDaelCeHjZBAvFyOxHrgXjwo2SxYzT1PY'
+    bot_chatID = '662382293'
+    send_text = 'https://api.telegram.org/bot' + bot_token + '/sendMessage?chat_id=' + bot_chatID + '&parse_mode=Markdown&text=' + bot_message
+    response = requests.get(send_text)
+    return response.json()
+
+def getLocation(update, context):
+    context.bot.send_message(chat_id=update.effective_chat.id, text="My current location is:{}")
+
 
 if __name__ == "__main__":
     try:
@@ -747,9 +810,21 @@ if __name__ == "__main__":
         mylcd.lcd_display_string(getSSID(), 1)
         mylcd.lcd_display_string(ip, 2)
         sleep(1)
-
+        getLocationHandler = CommandHandler('location', getLocation)
+        dispatcher.add_handler(getLocationHandler)
+        logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',level=logging.INFO)
+        updater.start_polling()
+        telegram_bot_sendtext("@clientsS1Bot is activated!")
         main_without_pppd()
+    except RuntimeError:
+        s = "/home/pi/./speech.sh Runtime Error Detected! Restarting now..."
+        execute_unix(s)
+        mylcd.lcd_clear()
+        mylcd.lcd_display_string("RUNTIME ERROR", 1)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+
     except KeyboardInterrupt:
+        telegram_bot_sendtext("@clientsS1Bot is deactivated!")
         save_geojson_to_file(fileNum)
         s = "/home/pi/./speech.sh Shutting down"
         execute_unix(s)
