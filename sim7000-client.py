@@ -91,8 +91,8 @@ try:
     print("Connecting to Twilio...")
     # Your Account Sid and Auth Token from twilio.com/console
     # DANGER! This is insecure. See http://twil.io/secure
-    account_sid = 'AC93e0ce8c7f637352219ab3f6e71bbe34'
-    auth_token = '21c6de8a8d64d3db887c23b2417ba5ed'
+    account_sid = ''
+    auth_token = ''
     client = Client(account_sid, auth_token)
 except twilio.base.exceptions.TwilioException:
     print("Invalid Twilio token...Restarting...")
